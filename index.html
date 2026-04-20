@@ -238,7 +238,9 @@
 <div class="toolbar">
   <span class="toolbar-label">Ações:</span>
   <button class="btn btn-cyan" onclick="window.print()">🖨 Imprimir</button>
-  <button class="btn btn-ghost" onclick="exportHTML()">💾 Salvar HTML</button>
+  <button class="btn btn-ghost" onclick="salvarAlteracoes()">💾 Salvar alterações</button>
+  <button class="btn btn-ghost" onclick="resetGithubToken()">🔐 Token GitHub</button>
+  <button class="btn btn-ghost" onclick="exportHTML()">📥 Salvar HTML</button>
   <button class="btn btn-ghost" id="editModeBtn" onclick="toggleEditMode()">✏️ Modo Edição</button>
   <button class="btn btn-ghost" onclick="openDatasModal()">🗓 Datas Comemorativas</button>
   <div class="month-nav" id="monthNav"><button class="month-btn" id="mnav0">Jan</button><button class="month-btn" id="mnav1">Fev</button><button class="month-btn" id="mnav2">Mar</button><button class="month-btn active" id="mnav3">Abr</button><button class="month-btn" id="mnav4">Mai</button><button class="month-btn" id="mnav5">Jun</button><button class="month-btn" id="mnav6">Jul</button><button class="month-btn" id="mnav7">Ago</button><button class="month-btn" id="mnav8">Set</button><button class="month-btn" id="mnav9">Out</button><button class="month-btn" id="mnav10">Nov</button><button class="month-btn" id="mnav11">Dez</button><button class="month-btn" id="mnav0">Jan</button><button class="month-btn" id="mnav1">Fev</button><button class="month-btn" id="mnav2">Mar</button><button class="month-btn" id="mnav3">Abr</button><button class="month-btn" id="mnav4">Mai</button><button class="month-btn" id="mnav5">Jun</button><button class="month-btn" id="mnav6">Jul</button><button class="month-btn" id="mnav7">Ago</button><button class="month-btn" id="mnav8">Set</button><button class="month-btn" id="mnav9">Out</button><button class="month-btn" id="mnav10">Nov</button><button class="month-btn" id="mnav11">Dez</button></div>
@@ -973,6 +975,13 @@ Slide 2: …" style="min-height:160px"></textarea>
 
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
+const GITHUB_CONFIG = {
+  owner: 'COLOQUE_AQUI',
+  repo: 'COLOQUE_AQUI',
+  path: 'index.html',
+  branch: 'main'
+};
+
 // Each month: { year, month(1-12), firstDow(0=Sun), days, notes, special:{day:'label'} }
 const MONTHS_CONFIG = [
   { year:2026, month:1,  firstDow:4, days:31, notes:'', special:{1:'🎆 Ano Novo',6:'🏖️ Feriado RJ'} },
@@ -1028,15 +1037,18 @@ function updateStats(){
 // ── Build Month Nav ──
 function buildMonthNav(){
   const nav=document.getElementById('monthNav');
+  if(!nav) return;
+  nav.innerHTML='';
   MONTHS_CONFIG.forEach((mc,i)=>{
     const btn=document.createElement('button');
-    btn.className='month-btn';
+    btn.className='month-btn' + (i===3 ? ' active' : '');
     btn.textContent=MONTH_NAMES[mc.month-1].substring(0,3);
     btn.onclick=()=>scrollToMonth(i);
     btn.id='mnav'+i;
     nav.appendChild(btn);
   });
 }
+
 
 function scrollToMonth(i){
   const el=document.getElementById('month-'+i);
@@ -1416,22 +1428,191 @@ function saveDatas(){
 document.getElementById('datasMonthSel').addEventListener('change', renderDatasList);
 document.getElementById('datasOverlay').addEventListener('click', e=>{if(e.target===e.currentTarget)closeDatasModal();});
 
+
+function getGithubConfig(){
+  return { ...GITHUB_CONFIG };
+}
+
+function getGithubToken(forceReset=false){
+  if(forceReset){
+    localStorage.removeItem('github_token');
+    localStorage.removeItem('github_repo_config');
+  }
+  let token = localStorage.getItem('github_token');
+  if(!token){
+    token = prompt('Cole seu token do GitHub:');
+    if(!token) return null;
+    token = token.trim();
+    if(!token) return null;
+    localStorage.setItem('github_token', token);
+  }
+  return token;
+}
+
+function resetGithubToken(){
+  localStorage.removeItem('github_token');
+  localStorage.removeItem('github_repo_config');
+  showToast('🔐 Token removido. Ele será solicitado novamente.');
+}
+
+function collectCalendarState(){
+  return {
+    header: {
+      client: document.getElementById('hdrClient')?.innerText || '',
+      year: document.getElementById('hdrYear')?.innerText || '',
+      sub: document.getElementById('hdrSub')?.innerText || ''
+    },
+    posts: Array.isArray(POSTS) ? POSTS.map(p => ({...p, imgs:Array.isArray(p.imgs)?p.imgs:[]})) : [],
+    planData: JSON.parse(JSON.stringify(PLAN_DATA || {})),
+    monthsConfig: MONTHS_CONFIG.map(mc => ({
+      year: mc.year,
+      month: mc.month,
+      firstDow: mc.firstDow,
+      days: mc.days,
+      notes: mc.notes || '',
+      special: {...(mc.special || {})}
+    }))
+  };
+}
+
+function applyPersistedState(state){
+  if(!state || typeof state !== 'object') return;
+
+  if(state.header){
+    const clientEl = document.getElementById('hdrClient');
+    const yearEl = document.getElementById('hdrYear');
+    const subEl = document.getElementById('hdrSub');
+    if(clientEl && typeof state.header.client === 'string') clientEl.innerText = state.header.client;
+    if(yearEl && typeof state.header.year === 'string') yearEl.innerText = state.header.year;
+    if(subEl && typeof state.header.sub === 'string') subEl.innerText = state.header.sub;
+  }
+
+  if(Array.isArray(state.posts)){
+    POSTS = state.posts.map(p => ({
+      ...p,
+      imgs: Array.isArray(p.imgs) ? p.imgs : [],
+      caption: p.caption || '',
+      descricao: p.descricao || '',
+      imgObs: p.imgObs || '',
+      roteiro: p.roteiro || '',
+      videoLink: p.videoLink || '',
+      slides: p.slides || '',
+      slidesNum: p.slidesNum || '',
+      postado: !!p.postado,
+      pending: !!p.pending,
+      trafego: !!p.trafego
+    }));
+  }
+
+  if(state.planData && typeof state.planData === 'object'){
+    PLAN_DATA = JSON.parse(JSON.stringify(state.planData));
+  }
+
+  if(Array.isArray(state.monthsConfig)){
+    state.monthsConfig.forEach((savedMc, idx) => {
+      const target = MONTHS_CONFIG[idx];
+      if(!target || !savedMc) return;
+      if(typeof savedMc.year === 'number') target.year = savedMc.year;
+      if(typeof savedMc.month === 'number') target.month = savedMc.month;
+      if(typeof savedMc.firstDow === 'number') target.firstDow = savedMc.firstDow;
+      if(typeof savedMc.days === 'number') target.days = savedMc.days;
+      if(typeof savedMc.notes === 'string') target.notes = savedMc.notes;
+      target.special = {...(savedMc.special || {})};
+    });
+  }
+}
+
+function buildPersistedStateScript(state){
+  return `<script>
+window.__PERSISTED_CALENDAR_STATE__ = ${JSON.stringify(state)};
+<\/script>`;
+}
+
+function buildPersistentHtml(){
+  const state = collectCalendarState();
+  let src = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+  src = src.replace(/<input type="file" accept="image\/\*" multiple(?:="")? style="display: none;">/g, '');
+  src = src.replace(/<script>\s*window\.__PERSISTED_CALENDAR_STATE__\s*=\s*[\s\S]*?<\\\/script>\s*/g, '');
+
+  const stateScript = buildPersistedStateScript(state);
+  if(src.includes('<script>')){
+    src = src.replace('<script>', stateScript + '\n<script>');
+  } else {
+    src = src.replace('</body>', stateScript + '\n</body>');
+  }
+  return src;
+}
+
+async function salvarAlteracoes(){
+  const cfg = getGithubConfig();
+  if(!cfg.owner || cfg.owner === 'COLOQUE_AQUI' || !cfg.repo || cfg.repo === 'COLOQUE_AQUI'){
+    alert('Preencha owner e repo no GITHUB_CONFIG antes de salvar.');
+    return;
+  }
+
+  const token = getGithubToken();
+  if(!token) return;
+
+  const apiUrl = `https://api.github.com/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${cfg.path}`;
+
+  try {
+    showToast('💾 Salvando no GitHub...');
+    const getResp = await fetch(apiUrl + `?ref=${encodeURIComponent(cfg.branch)}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github+json'
+      }
+    });
+
+    if(!getResp.ok){
+      const errText = await getResp.text();
+      throw new Error(`Não foi possível ler o arquivo no GitHub (${getResp.status}). ${errText}`);
+    }
+
+    const fileData = await getResp.json();
+    const htmlAtualizado = buildPersistentHtml();
+    const contentBase64 = btoa(unescape(encodeURIComponent(htmlAtualizado)));
+
+    const putResp = await fetch(apiUrl, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: `Atualiza calendário editorial em ${new Date().toLocaleString('pt-BR')}`,
+        content: contentBase64,
+        sha: fileData.sha,
+        branch: cfg.branch
+      })
+    });
+
+    if(!putResp.ok){
+      const errText = await putResp.text();
+      throw new Error(`Não foi possível salvar no GitHub (${putResp.status}). ${errText}`);
+    }
+
+    localStorage.setItem('github_repo_config', JSON.stringify(cfg));
+    showToast('✅ Alterações salvas no GitHub!');
+  } catch(err){
+    console.error(err);
+    alert(err.message || 'Erro ao salvar no GitHub.');
+    showToast('⚠️ Erro ao salvar no GitHub');
+  }
+}
+
 // ── Export ──
 function exportHTML(){
   const client = (document.getElementById('hdrClient')?.innerText || '').trim();
   const year = (document.getElementById('hdrYear')?.innerText || '').trim();
-  const sub = (document.getElementById('hdrSub')?.innerText || '').trim();
-
-  let src = document.documentElement.outerHTML;
-
-  src = src.replace(/(<span contenteditable="true" id="hdrClient"[^>]*>)([\s\S]*?)(<\/span>)/, `$1${client}$3`);
-  src = src.replace(/(<em contenteditable="true" id="hdrYear"[^>]*>)([\s\S]*?)(<\/em>)/, `$1${year}$3`);
-  src = src.replace(/(<span[^>]*id="hdrSub"[^>]*>)([\s\S]*?)(<\/span>)/, `$1${sub}$3`);
+  const src = buildPersistentHtml();
 
   const blob = new Blob([src], { type: 'text/html;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `calendario-editorial-${client.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'editavel'}-${year || '2026'}.html`;
+  const safeClient = client.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'editavel';
+  a.download = `calendario-editorial-${safeClient}-${year || '2026'}.html`;
   document.body.appendChild(a);
   a.click();
   setTimeout(() => {
@@ -1439,6 +1620,7 @@ function exportHTML(){
     a.remove();
   }, 100);
 }
+
 
 function showToast(msg){
   const t=document.getElementById('toast');t.textContent=msg;
@@ -1448,6 +1630,9 @@ function showToast(msg){
 document.getElementById('modalOverlay').addEventListener('click',e=>{if(e.target===e.currentTarget)closeModal();});
 
 // ── Init ──
+if(window.__PERSISTED_CALENDAR_STATE__){
+  applyPersistedState(window.__PERSISTED_CALENDAR_STATE__);
+}
 buildMonthNav();
 renderAll();
 
@@ -1462,7 +1647,6 @@ const observer = new IntersectionObserver((entries)=>{
   });
 },{threshold:0.15});
 document.querySelectorAll('.month-block').forEach(el=>observer.observe(el));
-</script><input type="file" accept="image/*" multiple="" style="display: none;"><input type="file" accept="image/*" multiple="" style="display: none;">
-
+</script>
 
 </body></html>
